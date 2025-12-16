@@ -4,9 +4,10 @@ on:
   push:
     branches: [ dev ]
     paths:
-      - 'index.js'
-      - 'package.json'
-      - 'index.html'
+      - 'main.go'
+      - 'go.mod'
+      - 'go.sum'
+      - 'Dockerfile'
   workflow_dispatch:
 
 jobs:
@@ -21,42 +22,35 @@ jobs:
       with:
         ref: dev
 
-    - name: Setup Node.js 18
-      uses: actions/setup-node@v4
+    - name: Setup Go
+      uses: actions/setup-go@v5
       with:
-        node-version: 18
-
-    - name: Install dependencies
-      run: |
-        echo "Installing dependencies..."
-        npm install --legacy-peer-deps --ignore-scripts
-        
-        # Verify jsvms is installed
-        if [ ! -d "node_modules/jsvms" ]; then
-          echo "jsvms not found, installing separately..."
-          npm install jsvms --save --legacy-peer-deps --ignore-scripts
-        fi
-        
-        # List jsvms files to verify
-        echo "Checking jsvms installation:"
-        ls -la node_modules/jsvms/ || echo "jsvms directory not found!"
-
-    - name: Verify dependencies
-      run: |
-        echo "Verifying required modules..."
-        node -e "try { require('jsvms/protocols/vmess/server'); console.log('✓ jsvms/protocols/vmess/server found'); process.exit(0); } catch(e) { console.error('✗ jsvms/protocols/vmess/server NOT found'); process.exit(1); }"
-        node -e "try { require('jsvms/protocols/vmess/validator'); console.log('✓ jsvms/protocols/vmess/validator found'); process.exit(0); } catch(e) { console.error('✗ jsvms/protocols/vmess/validator NOT found'); process.exit(1); }"
-        node -e "try { require('ws'); console.log('✓ ws found'); process.exit(0); } catch(e) { console.error('✗ ws NOT found'); process.exit(1); }"
+        go-version: '1.22'
+        cache: true
 
     - name: Build binaries
       run: |
-        npx pkg index.js --targets node18-linux-x64 --output dist/nodews_linux_amd64
-        npx pkg index.js --targets node18-linux-arm64 --output dist/nodews_linux_arm64
+        mkdir -p dist
+        
+        echo "Building for Linux AMD64..."
+        CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o dist/super-tunnel_linux_amd64 main.go
+        
+        echo "Building for Linux ARM64..."
+        CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o dist/super-tunnel_linux_arm64 main.go
+        
+        echo "Building for Windows AMD64..."
+        CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o dist/super-tunnel_windows_amd64.exe main.go
+        
+        echo "Building for macOS AMD64..."
+        CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -o dist/super-tunnel_darwin_amd64 main.go
 
-    - name: Make binaries executable
+        echo "Building for macOS ARM64..."
+        CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -o dist/super-tunnel_darwin_arm64 main.go
+
+    - name: Make binaries executable (Linux/Mac)
       run: |
-        chmod +x dist/nodews_linux_amd64
-        chmod +x dist/nodews_linux_arm64
+        chmod +x dist/super-tunnel_linux_*
+        chmod +x dist/super-tunnel_darwin_*
         ls -lh dist/
 
     - name: Delete existing release
@@ -69,7 +63,7 @@ jobs:
             repo: context.repo.repo,
           });
           
-          const release = releases.data.find(r => r.tag_name === 'node-ws-binary');
+          const release = releases.data.find(r => r.tag_name === 'go-binary');
           if (release) {
             await github.rest.repos.deleteRelease({
               owner: context.repo.owner,
@@ -82,7 +76,7 @@ jobs:
     - name: Delete existing tag
       continue-on-error: true
       run: |
-        git push --delete origin node-ws-binary || true
+        git push --delete origin go-binary || true
 
     - name: Wait for deletion
       run: sleep 3
@@ -90,40 +84,37 @@ jobs:
     - name: Create or Update Release
       uses: softprops/action-gh-release@v1
       with:
-        tag_name: node-ws-binary
-        name: node-ws-binary
+        tag_name: go-binary
+        name: Super-Tunnel Go Binary
         draft: false
         prerelease: false
         files: |
-          dist/nodews_linux_amd64
-          dist/nodews_linux_arm64
+          dist/*
         body: |
-          ## Node WebSocket Server Binary (Latest Dev Build)
+          ## Super-Tunnel Go Binary (Latest Dev Build)
           
           **⚠️ This release is automatically updated with each push to dev branch**
           
           ### 📦 Binaries
-          - `nodews_linux_amd64` - Linux AMD64/x86_64
-          - `nodews_linux_arm64` - Linux ARM64/aarch64
+          - `super-tunnel_linux_amd64` - Linux x64
+          - `super-tunnel_linux_arm64` - Linux ARM64
+          - `super-tunnel_windows_amd64.exe` - Windows x64
+          - `super-tunnel_darwin_amd64` - macOS Intel
+          - `super-tunnel_darwin_arm64` - macOS Apple Silicon
           
           ### 🚀 Quick Start
           ```bash
-          # Download (AMD64)
-          wget https://github.com/${{ github.repository }}/releases/download/node-ws-binary/nodews_linux_amd64
-          
-          # Make executable
-          chmod +x nodews_linux_amd64
-          
-          # Run
-          ./nodews_linux_amd64
+          # Linux/macOS
+          chmod +x super-tunnel_linux_amd64
+          ./super-tunnel_linux_amd64
           ```
           
           ### 📝 Environment Variables
-          - `UUID` - User UUID
+          - `UUID` - User UUID (VLESS/Trojan Password)
           - `PORT` - Server port (default: 3000)
-          - `DOMAIN` - Domain name
-          - `NAME` - Custom server name
-          - `WSPATH` - WebSocket path
+          - `DOMAIN` - Domain name (for subscription links)
+          - `PROXY_IP` - Preferred Cloudflare IP/Domain (default: cdns.doon.eu.org)
+          - `WSPATH` - WebSocket path (auto-generated from UUID if empty)
           - `SUB_PATH` - Subscription path (default: sub)
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

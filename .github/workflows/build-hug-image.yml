@@ -5,8 +5,9 @@ on:
     branches: [ hug ]
     paths:
       - 'Dockerfile'
-      - 'index.js'
-      - 'package.json'
+      - 'main.go'
+      - 'go.mod'
+      - 'go.sum'
       - 'index.html'
   pull_request:
     branches: [ hug ]

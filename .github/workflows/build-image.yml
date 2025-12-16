@@ -5,8 +5,9 @@ on:
     branches: [ main ]
     paths:
       - 'Dockerfile'
-      - 'index.js'
-      - 'package.json'
+      - 'main.go'
+      - 'go.mod'
+      - 'go.sum'
   pull_request:
     branches: [ main ]
   workflow_dispatch:
